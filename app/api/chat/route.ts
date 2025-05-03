@@ -91,24 +91,27 @@ export async function POST(request: Request) {
         response: "I apologize, but I don't have any information about that in my database. Please try asking a different question about women's safety."
       });
 
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       console.error('🚨 Error processing query:', error);
       
-      if (error.message?.includes('OPENAI_API_KEY')) {
+      // Type guard to ensure error is treated as an object with message property
+      const errorWithMessage = error as { message?: string };
+      
+      if (errorWithMessage.message?.includes('OPENAI_API_KEY')) {
         return NextResponse.json(
           { 
             error: 'OpenAI API configuration error. Please check environment variables.',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            details: process.env.NODE_ENV === 'development' ? errorWithMessage.message : undefined
           },
           { status: 503 }
         );
       }
       
-      if (error.message?.includes('POSTGRES_URL')) {
+      if (errorWithMessage.message?.includes('POSTGRES_URL')) {
         return NextResponse.json(
           { 
             error: 'Database configuration error. Please check environment variables.',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            details: process.env.NODE_ENV === 'development' ? errorWithMessage.message : undefined
           },
           { status: 503 }
         );

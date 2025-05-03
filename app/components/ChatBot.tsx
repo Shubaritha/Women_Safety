@@ -12,7 +12,7 @@ export default function ChatBot() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: "Hello! I'm your women's safety assistant. How can I help you today?",
+      text: "Hello! I&apos;m your women&apos;s safety assistant. How can I help you today?",
       sender: 'bot'
     }
   ]);
