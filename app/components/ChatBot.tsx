@@ -121,7 +121,7 @@ export default function ChatBot() {
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <div className="bg-purple-600 text-white p-4 shadow-md">
-        <h1 className="text-xl font-bold">Women's Safety Assistant</h1>
+        <h1 className="text-xl font-bold">Women&apos;s Safety Assistant</h1>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 space-y-4">

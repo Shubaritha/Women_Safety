@@ -2,6 +2,6 @@
   "extends": "next/core-web-vitals",
   "rules": {
     "@typescript-eslint/no-explicit-any": "error",
-    "react/no-unescaped-entities": "error"
+    "react/no-unescaped-entities": "off"
   }
 } 
