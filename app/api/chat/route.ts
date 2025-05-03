@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkQueryType, rewriteQuery, generateFocusedResponse } from '@/app/utils/openai';
+import { checkQueryType, rewriteQuery, extractRelevantPortion } from '@/app/utils/openai';
 import { searchSimilarResponses } from '@/app/utils/db';
 
 const RESPONSES = {
@@ -11,62 +11,114 @@ const RESPONSES = {
   IRRELEVANT: [
     "I apologize, but I'm specifically trained to help with women's safety related questions. Could you please ask something related to women's safety, personal security, or harassment prevention?",
     "I must decline to respond as this query is not related to women's safety. Please ask a question about safety, security, or support matters."
+  ],
+  INAPPROPRIATE: [
+    "I apologize, but I cannot assist with harmful or inappropriate content. This service is dedicated to providing helpful safety information and support. Please ask an appropriate question about women's safety.",
+    "I must decline to respond to inappropriate content. This is a safety-focused service. Please ask questions related to women's safety and support."
   ]
 };
-
-const EMERGENCY_CONTACTS = `Important Emergency Numbers:
-• Police: 100
-• Women's Helpline: 1091
-• Domestic Abuse Helpline: 181
-• Ambulance: 102
-
-Save these numbers in your phone for quick access.`;
 
 export async function POST(request: Request) {
   try {
     console.log('📩 Received chat request');
-    const { message } = await request.json();
+    const { message, stream = false } = await request.json();
     console.log('💭 Processing message:', message);
+    console.log('🌊 Stream mode:', stream ? 'enabled' : 'disabled');
 
     // Check query type
     console.log('🔍 Checking query type...');
     const queryType = await checkQueryType(message);
     console.log('✅ Query classified as:', queryType);
 
-    // Handle greetings and irrelevant queries
+    // Handle non-relevant queries
     if (queryType === 'GREETING') {
       console.log('👋 Responding with greeting');
       const randomGreeting = RESPONSES.GREETING[Math.floor(Math.random() * RESPONSES.GREETING.length)];
       return NextResponse.json({ response: randomGreeting });
     }
 
-    if (queryType === 'IRRELEVANT') {
-      console.log('⚠️ Query marked as irrelevant');
-      const randomResponse = RESPONSES.IRRELEVANT[Math.floor(Math.random() * RESPONSES.IRRELEVANT.length)];
+    if (queryType === 'IRRELEVANT' || queryType === 'INAPPROPRIATE') {
+      console.log(`⚠️ Query marked as ${queryType.toLowerCase()}`);
+      const responses = RESPONSES[queryType];
+      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
       return NextResponse.json({ response: randomResponse });
     }
 
     // Process relevant query
-    console.log('✨ Processing relevant query');
-    const rewrittenQuery = await rewriteQuery(message);
-    const result = await searchSimilarResponses(rewrittenQuery);
+    try {
+      console.log('✨ Processing relevant query');
+      console.log('🔄 Starting query rewrite process...');
+      const rewrittenQuery = await rewriteQuery(message);
+      console.log('📝 Rewritten query:', rewrittenQuery);
 
-    if (result) {
-      console.log('✅ Found matching response');
-      const focusedResponse = await generateFocusedResponse(message, result.contents);
-      return NextResponse.json({ 
-        response: `${focusedResponse}\n\n${EMERGENCY_CONTACTS}` 
+      console.log('🔍 Searching for similar responses...');
+      const result = await searchSimilarResponses(rewrittenQuery);
+
+      if (result) {
+        console.log('✅ Found matching response');
+        console.log('📑 Extracting relevant content...');
+        
+        if (stream) {
+          console.log('🌊 Using streaming mode for response');
+          const streamResponse = await extractRelevantPortion(message, result.contents, true) as ReadableStream<Uint8Array>;
+          
+          return new Response(streamResponse, {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            },
+          });
+        }
+        
+        // Non-streaming mode
+        const relevantContent = await extractRelevantPortion(message, result.contents) as string;
+        
+        if (relevantContent === "No specific information found in the database.") {
+          console.log('⚠️ No specific information found');
+          return NextResponse.json({ 
+            response: "I apologize, but I don't have specific information about that in my database. Please try rephrasing your question or ask about a different safety concern."
+          });
+        }
+
+        return NextResponse.json({ 
+          response: relevantContent
+        });
+      }
+
+      console.log('⚠️ No matching response found');
+      return NextResponse.json({
+        response: "I apologize, but I don't have any information about that in my database. Please try asking a different question about women's safety."
       });
+
+    } catch (error: any) {
+      console.error('🚨 Error processing query:', error);
+      
+      if (error.message?.includes('OPENAI_API_KEY')) {
+        return NextResponse.json(
+          { 
+            error: 'OpenAI API configuration error. Please check environment variables.',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+          },
+          { status: 503 }
+        );
+      }
+      
+      if (error.message?.includes('POSTGRES_URL')) {
+        return NextResponse.json(
+          { 
+            error: 'Database configuration error. Please check environment variables.',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+          },
+          { status: 503 }
+        );
+      }
+      
+      throw error; // Re-throw for general error handling
     }
 
-    // Fallback response
-    console.log('⚠️ No matching response found, using fallback');
-    return NextResponse.json({
-      response: `I understand your concern about women's safety. While I don't have a specific answer for this query, here are some important contacts and recommendations:\n\n1. Contact women's helpline: 1091\n2. Police emergency: 100\n3. Domestic abuse helpline: 181\n\n${EMERGENCY_CONTACTS}`
-    });
-
   } catch (error) {
-    console.error('🚨 Error processing chat:', error);
+    console.error('🚨 Unhandled error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
